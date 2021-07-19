@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -95,7 +96,7 @@ The commands are specified in a mani.yaml file along with the projects you can t
 func executeRun(
 	args []string,
 	config *dao.Config,
-	output string,
+	outputFlag string,
 	describeFlag bool,
 	dryRunFlag bool,
 	cwdFlag bool,
@@ -103,12 +104,36 @@ func executeRun(
 	tagsFlag []string,
 	projectsFlag []string,
 ) {
-	command, err := config.GetCommand(args[0])
-	core.CheckIfError(err)
+	projects := config.FilterProjects(cwdFlag, allProjectsFlag, tagsFlag, projectsFlag)
 
-	command.SetEnvList(args[1:], config.GetEnv())
+	var commandNames []string
+	var userArgs []string
+	for _, arg := range args {
+		if strings.Contains(arg, "=") {
+			userArgs = append(userArgs, arg)
+		} else {
+			commandNames = append(commandNames, arg)
+		}
+	}
 
-	finalProjects := config.FilterProjects(cwdFlag, allProjectsFlag, tagsFlag, projectsFlag)
+	for _, cmd := range commandNames {
+		command, err := config.GetCommand(cmd)
+		core.CheckIfError(err)
+
+		runCommand(command, projects, userArgs, config, outputFlag, describeFlag, dryRunFlag)
+	}
+}
+
+func runCommand(
+	command *dao.Command,
+	projects []dao.Project,
+	userArgs []string,
+	config *dao.Config,
+	outputFlag string,
+	describeFlag bool,
+	dryRunFlag bool,
+) {
+	command.SetEnvList(userArgs, config.GetEnv())
 
 	if describeFlag {
 		print.PrintCommandBlocks([]dao.Command {*command})
@@ -119,7 +144,7 @@ func executeRun(
 
 	err = spinner.Start()
 	var outputs []dao.ProjectOutput
-	for _, project := range finalProjects {
+	for _, project := range projects {
 		spinner.Message(fmt.Sprintf(" %v", project.Name))
 
 		output, err := command.RunCmd(config.Path, config.Shell, project, command.EnvList, dryRunFlag)
@@ -136,5 +161,5 @@ func executeRun(
 	err = spinner.Stop()
 	core.CheckIfError(err)
 
-	print.PrintRun(output, outputs)
+	print.PrintRun(outputFlag, outputs)
 }
